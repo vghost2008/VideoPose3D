@@ -20,7 +20,7 @@ def parse_args():
                         help='unlabeled subjects separated by comma for self-supervision')
     parser.add_argument('-a', '--actions', default='*', type=str, metavar='LIST',
                         help='actions to train/test on, separated by comma, or * for all')
-    parser.add_argument('-c', '--checkpoint', default='checkpoint', type=str, metavar='PATH',
+    parser.add_argument('-c', '--checkpoint', default='weights', type=str, metavar='PATH',
                         help='checkpoint directory')
     parser.add_argument('--checkpoint-frequency', default=10, type=int, metavar='N',
                         help='create a checkpoint every N epochs')

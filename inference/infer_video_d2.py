@@ -94,10 +94,13 @@ def main(args):
     else:
         im_list = [args.im_or_folder]
 
+    print(f"Output dir: {args.output_dir}")
     for video_name in im_list:
         out_name = os.path.join(
                 args.output_dir, os.path.basename(video_name)
             )
+        if not os.path.exists(args.output_dir):
+            os.makedirs(args.output_dir)
         print('Processing {}'.format(video_name))
 
         boxes = []

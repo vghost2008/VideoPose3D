@@ -112,6 +112,9 @@ def fetch(subjects, action_filter=None, subset=1, parse_3d_poses=True):
     out_poses_2d = []
     out_camera_params = []
     for subject in subjects:
+        #wj
+        print("KEYS0:",list(keypoints.keys()))
+        print("KEYS:",list(keypoints[subject].keys()))
         for action in keypoints[subject].keys():
             if action_filter is not None:
                 found = False
