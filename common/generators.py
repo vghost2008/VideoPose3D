@@ -34,7 +34,7 @@ class ChunkedGenerator:
                  endless=False):
         assert poses_3d is None or len(poses_3d) == len(poses_2d), (len(poses_3d), len(poses_2d))
         assert cameras is None or len(cameras) == len(poses_2d)
-    
+
         # Build lineage info
         pairs = [] # (seq_idx, start_frame, end_frame, flip) tuples
         for i in range(len(poses_2d)):
@@ -73,7 +73,8 @@ class ChunkedGenerator:
         self.kps_right = kps_right
         self.joints_left = joints_left
         self.joints_right = joints_right
-        
+        print(f"batch size = {self.batch_size}, len pose 3d {len(poses_3d) if poses_3d is not None else 0}, len pose 2d {len(poses_2d) if poses_2d is not None else 0}, len pairs {len(pairs)}")
+
     def num_frames(self):
         return self.num_batches * self.batch_size
     

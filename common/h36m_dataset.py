@@ -16,6 +16,7 @@ h36m_skeleton = Skeleton(parents=[-1,  0,  1,  2,  3,  4,  0,  6,  7,  8,  9,  0
        joints_left=[6, 7, 8, 9, 10, 16, 17, 18, 19, 20, 21, 22, 23],
        joints_right=[1, 2, 3, 4, 5, 24, 25, 26, 27, 28, 29, 30, 31])
 
+#Train sem need intrinsic params
 h36m_cameras_intrinsic_params = [
     {
         'id': '54138969',
@@ -225,10 +226,10 @@ class Human36mDataset(MocapDataset):
                     cam['translation'] = cam['translation']/1000 # mm to meters
                 
                 # Add intrinsic parameters vector
-                cam['intrinsic'] = np.concatenate((cam['focal_length'],
-                                                   cam['center'],
-                                                   cam['radial_distortion'],
-                                                   cam['tangential_distortion']))
+                cam['intrinsic'] = np.concatenate((cam['focal_length'], #2
+                                                   cam['center'], #2
+                                                   cam['radial_distortion'], #3
+                                                   cam['tangential_distortion'])) #2
         
         # Load serialized dataset
         data = np.load(path, allow_pickle=True)['positions_3d'].item()

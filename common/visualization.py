@@ -133,6 +133,7 @@ def render_animation(keypoints, keypoints_metadata, poses, skeleton, fps, bitrat
     image = None
     lines = []
     points = None
+    texts = []
     
     if limit < 1:
         limit = len(all_frames)
@@ -141,7 +142,7 @@ def render_animation(keypoints, keypoints_metadata, poses, skeleton, fps, bitrat
 
     parents = skeleton.parents()
     def update_video(i):
-        nonlocal initialized, image, lines, points
+        nonlocal initialized, image, lines, points,texts
 
         for n, ax in enumerate(ax_3d):
             ax.set_xlim3d([-radius/2 + trajectories[n][i, 0], radius/2 + trajectories[n][i, 0]])
@@ -153,6 +154,9 @@ def render_animation(keypoints, keypoints_metadata, poses, skeleton, fps, bitrat
         colors_2d[joints_right_2d] = 'red'
         if not initialized:
             image = ax_in.imshow(all_frames[i], aspect='equal')
+
+            for j in range(17):
+                texts.append(ax_in.text(keypoints[i,j,0],keypoints[i,j,1],f"{j}"))
             
             for j, j_parent in enumerate(parents):
                 if j_parent == -1:
@@ -175,6 +179,9 @@ def render_animation(keypoints, keypoints_metadata, poses, skeleton, fps, bitrat
             initialized = True
         else:
             image.set_data(all_frames[i])
+            for j in range(17):
+                texts[j].set_x(keypoints[i,j,0])
+                texts[j].set_y(keypoints[i,j,1])
 
             for j, j_parent in enumerate(parents):
                 if j_parent == -1:

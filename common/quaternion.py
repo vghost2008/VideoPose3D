@@ -25,6 +25,7 @@ def qrot(q, v):
     
     
 def qinverse(q, inplace=False):
+    #the inverse of q is conjugate of q div mod of q  #wjn
     # We assume the quaternion to be normalized
     if inplace:
         q[..., 1:] *= -1
