@@ -1,7 +1,7 @@
 import numpy as np
 import os
 
-os.environ['CUDA_VISIBLE_DEVICES'] = "2"
+os.environ['CUDA_VISIBLE_DEVICES'] = "3"
 from common.arguments import parse_args
 import torch
 
@@ -19,7 +19,8 @@ from time import time
 from common.utils import deterministic_random
 
 args = parse_args()
-args.checkpoint = args.checkpoint+"_sem"
+args.checkpoint = args.checkpoint+"_semv2"
+in_features = 3
 print(args)
 
 try:
@@ -93,9 +94,9 @@ for subject in keypoints.keys():
         for cam_idx, kps in enumerate(keypoints[subject][action]):
             # Normalize camera frame
             cam = dataset.cameras()[subject][cam_idx]
+            scores = kps[...,-1]
             kps[..., :2] = normalize_screen_coordinates(kps[..., :2], w=cam['res_w'], h=cam['res_h'])
             #wj 
-            kps = kps[...,:2]
             keypoints[subject][action][cam_idx] = kps
 
 subjects_train = args.subjects_train.split(',')
@@ -172,15 +173,21 @@ cameras_valid, poses_valid, poses_valid_2d = fetch(subjects_test, action_filter)
 filter_widths = [int(x) for x in args.architecture.split(',')]
 if not args.disable_optimizations and not args.dense and args.stride == 1:
     # Use optimized model for single-frame predictions
-    model_pos_train = TemporalModelOptimized1f(poses_valid_2d[0].shape[-2], poses_valid_2d[0].shape[-1], dataset.skeleton().num_joints(),
+    model_pos_train = TemporalModelOptimized1f(poses_valid_2d[0].shape[-2], 
+                                in_features,
+                                dataset.skeleton().num_joints(),
                                 filter_widths=filter_widths, causal=args.causal, dropout=args.dropout, channels=args.channels)
 else:
     # When incompatible settings are detected (stride > 1, dense filters, or disabled optimization) fall back to normal model
-    model_pos_train = TemporalModel(poses_valid_2d[0].shape[-2], poses_valid_2d[0].shape[-1], dataset.skeleton().num_joints(),
+    model_pos_train = TemporalModel(poses_valid_2d[0].shape[-2],
+                                in_features,
+                                dataset.skeleton().num_joints(),
                                 filter_widths=filter_widths, causal=args.causal, dropout=args.dropout, channels=args.channels,
                                 dense=args.dense)
 #use 2d keypoints as inputs predict the relative of 3d coordinate of all keypoints in camera coordinate    
-model_pos = TemporalModel(poses_valid_2d[0].shape[-2], poses_valid_2d[0].shape[-1], dataset.skeleton().num_joints(),
+model_pos = TemporalModel(poses_valid_2d[0].shape[-2],
+                            in_features,
+                            dataset.skeleton().num_joints(),
                             filter_widths=filter_widths, causal=args.causal, dropout=args.dropout, channels=args.channels,
                             dense=args.dense)
 print("Model pos")
@@ -229,16 +236,21 @@ if semi_supervised:
     
     if not args.disable_optimizations and not args.dense and args.stride == 1:
         # Use optimized model for single-frame predictions
-        model_traj_train = TemporalModelOptimized1f(poses_valid_2d[0].shape[-2], poses_valid_2d[0].shape[-1], 1,
+        model_traj_train = TemporalModelOptimized1f(poses_valid_2d[0].shape[-2], 
+                in_features,
+                1,
                 filter_widths=filter_widths, causal=args.causal, dropout=args.dropout, channels=args.channels)
     else:
         # When incompatible settings are detected (stride > 1, dense filters, or disabled optimization) fall back to normal model
-        model_traj_train = TemporalModel(poses_valid_2d[0].shape[-2], poses_valid_2d[0].shape[-1], 1,
+        model_traj_train = TemporalModel(poses_valid_2d[0].shape[-2],
+                in_features, 1,
                 filter_widths=filter_widths, causal=args.causal, dropout=args.dropout, channels=args.channels,
                 dense=args.dense)
 
     #use 2d keypoints as inputs predict the first keypoint's trajectory in camera coordinate
-    model_traj = TemporalModel(poses_valid_2d[0].shape[-2], poses_valid_2d[0].shape[-1], 1,
+    model_traj = TemporalModel(poses_valid_2d[0].shape[-2],
+                        in_features,
+                        1,
                         filter_widths=filter_widths, causal=args.causal, dropout=args.dropout, channels=args.channels,
                         dense=args.dense)
     if torch.cuda.is_available():
@@ -326,11 +338,20 @@ while epoch < args.epochs:
         model_traj_train.train()
         for (_, batch_3d, batch_2d), (cam_semi, _, batch_2d_semi) in \
             zip(train_generator.next_epoch(), semi_generator.next_epoch()):
-            
+
             # Fall back to supervised training for the first epoch (to avoid instability)
             skip = epoch < args.warmup
             #skip = False #wj debug
-            batch_2d_semi = batch_2d_semi[...,:2]
+
+            mask_p = np.random.rand(*batch_2d.shape[:-1])>0.03
+            mask_p0 = batch_2d[...,-1]>1e-8
+            mask_p = np.logical_and(mask_p,mask_p0)
+            mask_p = mask_p.astype(np.float32)
+            batch_2d[...,-1] = mask_p
+
+            mask_p_sem = batch_2d_semi[...,-1]>0.015
+            mask_p_sem = mask_p_sem.astype(np.float32)
+            batch_2d_semi[...,-1] = mask_p_sem
             
             cam_semi = torch.from_numpy(cam_semi.astype('float32'))
             inputs_3d = torch.from_numpy(batch_3d.astype('float32'))
@@ -376,17 +397,15 @@ while epoch < args.epochs:
                 predicted_semi = predicted_3d_pos_cat[split_idx:]
                 if pad > 0:
                     target_semi = inputs_2d_semi[:, pad:-pad, :, :2].contiguous()
+                    target_semi_w = inputs_2d_semi[:, pad:-pad, :, 2:].contiguous()
                 else:
                     target_semi = inputs_2d_semi[:, :, :, :2].contiguous()
+                    target_semi_w = inputs_2d_semi[:, :, :, 2:].contiguous()
                     
                 projection_func = project_to_2d_linear if args.linear_projection else project_to_2d
                 reconstruction_semi = projection_func(predicted_semi + predicted_traj_cat[split_idx:], cam_semi)
 
-                w = target_semi>-1.0
-                if np.any(w):
-                    print("XXX")
-                #loss_reconstruction = mpjpe(reconstruction_semi, target_semi) # On 2D poses
-                loss_reconstruction = weighted_mpjpe(reconstruction_semi, target_semi) # On 2D poses
+                loss_reconstruction = weighted_mpjpe(reconstruction_semi, target_semi,target_semi_w) # On 2D poses
                 epoch_loss_2d_train_unlabeled += predicted_semi.shape[0]*predicted_semi.shape[1] * loss_reconstruction.item()
                 if not args.no_proj:
                     loss_total += loss_reconstruction
@@ -663,5 +682,5 @@ while epoch < args.epochs:
 
 
 '''
-train.py --subjects-train S1,S11,S9,S5,S6,S7,S8  -e 80 -lrd 0.98 -arc 3,3,3 --warmup 5 -b 512 -k detectron_pt_coco --dataset h36m 
+train_semv2.py --subjects-train S1,S11,S9,S5,S6,S7,S8  -e 100 -lrd 0.98 -arc 3,3,3,3,3 --warmup 5 -b 1024 -k detectron_pt_coco --dataset h36m 
 '''

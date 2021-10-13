@@ -21,7 +21,8 @@ tf.enable_eager_execution()
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Predict script')
-    parser.add_argument('-v', '--video', default='/home/wj/ai/mldata/pose3d/tennis1.mp4', type=str, metavar='NAME',
+    #parser.add_argument('-v', '--video', default='/home/wj/ai/mldata/pose3d/tennis1.mp4', type=str, metavar='NAME',
+    parser.add_argument('-v', '--video', default='/home/wj/ai/mldata/pose3d/basketball1.mp4', type=str, metavar='NAME',
                         help='target dataset')  # h36m or humaneva
     parser.add_argument('-s', '--save_dir', default='/home/wj/ai/0day/b', type=str, metavar='NAME',
                         help='save data dir path')  # h36m or humaneva
@@ -33,10 +34,10 @@ tf.enable_eager_execution()
 
 
 class VideoPose3DModel:
-    def __init__(self,ckpt_pos,ckpt_traj=None) -> None:
+    def __init__(self,ckpt_pos,ckpt_traj=None,use_scores=False) -> None:
         self.device = torch.device("cuda:0")
-        #filter_widths = [3,3,3,3,3]
-        filter_widths = [3,3,3]
+        filter_widths = [3,3,3,3,3]
+        #filter_widths = [3,3,3]
         self.model_pos = TemporalModel(num_joints_in=17,
                      in_features=2,num_joints_out=17,
                      filter_widths=filter_widths,
@@ -78,6 +79,11 @@ class VideoPose3DModel:
         'orientation': [0.1407056450843811, -0.1500701755285263, -0.755240797996521, 0.6223280429840088],
         'translation': [1841.1070556640625, 4955.28466796875, 1563.4454345703125],
         }
+        self.use_scores = use_scores
+
+    def update_camera(self,img):
+        self.cam['res_h'] = img.shape[0]
+        self.cam['res_w'] = img.shape[1]
 
     @staticmethod
     def normalize_screen_coordinates(X, w, h): 
@@ -134,6 +140,10 @@ class VideoPose3DModel:
         kps: [N,17,2+x]
         '''
         kps = np.array(kps)[...,:2]
+        if self.use_scores:
+            scores = (np.array(kps)[...,2:]>0.015).astype(np.float32)
+            scores = np.expand_dims(scores,axis=0)
+
         data0 = [kps[0]]*self.pad
         data1 = [kps[-1]]*self.pad
         data_org = np.concatenate([np.array(data0),np.array(kps),np.array(data1)],axis=0)
@@ -157,11 +167,18 @@ class VideoPose3DModel:
             data = self.normalize_screen_coordinates(data_org,cam['res_w'],cam['res_h'])
             data = np.expand_dims(data,axis=0)
             data_traj = data
+
         if flip:
             data[1,:,:,0] = data[1,:,:,0]*-1
             data[1,:,self.kps_left+self.kps_right] = data[1,:,self.kps_right+self.kps_left]
             data_traj[1,:,:,0] = data_traj[1,:,:,0]*-1
             data_traj[1,:,self.kps_left+self.kps_right] = data_traj[1,:,self.kps_right+self.kps_left]
+            if self.use_scores:
+                scores = np.tile(scores,[2,1,1,1])
+        
+        if self.use_scores:
+            data = np.concatenate([data,scores],axis=-1)
+            data_traj = np.concatenate([data_traj,scores],axis=-1)
 
         data = torch.tensor(data,dtype=torch.float32,device=self.device)
         data_traj = torch.tensor(data_traj,dtype=torch.float32,device=self.device)
@@ -203,6 +220,10 @@ class RenderAnimation:
         'orientation': [0.1407056450843811, -0.1500701755285263, -0.755240797996521, 0.6223280429840088],
         'translation': [1841.1070556640625, 4955.28466796875, 1563.4454345703125],
         }
+
+    def update_camera(self,img):
+        self.cam['res_h'] = img.shape[0]
+        self.cam['res_w'] = img.shape[1]
 
     def render_animation(self, 
                          limit=-1, size=6, save_path=""):
@@ -352,11 +373,13 @@ if __name__ == "__main__":
     args = parse_args()
     video_path = args.video
     #video_path = "/home/wj/ai/mldata/human3.6/S6/Videos/_ALL.54138969.mp4"
-    save_dir = "/home/wj/ai/mldata/pose3d/tmp/predict_on_video"
+    save_dir = "/home/wj/ai/mldata/pose3d/tmp/predict_on_video_"+wmlu.base_name(video_path)
     cache_dir = "/home/wj/ai/mldata/pose3d/tmp/cache"
     #ckpt_pos = 'weights/pretrained_h36m_detectron_coco.bin'
     ckpt_pos = 'weights/epoch_80.bin'
     ckpt_traj = 'weights/epoch_80.bin'
+    ckpt_pos = 'weights_sem/epoch_20.bin'
+    ckpt_traj = ckpt_pos
     #ckpt_traj = None
     video_pos_3d = VideoPose3DModel(ckpt_pos=ckpt_pos,ckpt_traj=ckpt_traj)
 
@@ -384,9 +407,11 @@ if __name__ == "__main__":
             pickle.dump(all_data,f)
         
     frames = all_frames
+    video_pos_3d.update_camera(frames[0])
+
     for tid,keypoints in sorted_kps:
         idxs = np.array(list(keypoints.keys()))
-        if len(idxs)<100:
+        if len(idxs)<30:
             continue
         min_idx = np.min(idxs)
         max_idx = np.max(idxs)
@@ -402,5 +427,6 @@ if __name__ == "__main__":
             all_keypoints.append(keypoints[i])
         pos_3d = video_pos_3d(all_keypoints,scale_data=True,flip=False)
         render_ani = RenderAnimation(all_frames,pos_3d,all_keypoints)
+        render_ani.update_camera(frames[0])
         render_ani.render_animation(save_path=save_path)
     print(f"Save path {save_dir}")

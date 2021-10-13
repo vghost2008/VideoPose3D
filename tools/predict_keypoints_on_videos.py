@@ -28,10 +28,10 @@ def predict_on_video(video_path):
 
     save_path = osp.join(dir_name,base_name+f"_*.npz")
     tfiles = glob.glob(save_path)
-    if len(glob.glob(save_path))>0:
+    '''if len(tfiles)>0:
         print(f"File {tfiles} exists.")
         print(f"Skip {video_path}")
-        return
+        return'''
 
     max_trackid_nr = 1
     min_frames_nr = 300

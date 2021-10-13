@@ -58,11 +58,10 @@ class SemDataset(MocapDataset):
         for file in all_files:
             with open(file,"rb") as f:
                 kps = pickle.load(f)
-                kps = kps[...,:2]
             if len(kps)<100:
                 continue
             cam = self.get_camera(file)
-            kps = normalize_screen_coordinates(kps, w=cam['res_w'], h=cam['res_h']).astype('float32')
+            kps[...,:2] = normalize_screen_coordinates(kps[...,:2], w=cam['res_w'], h=cam['res_h']).astype('float32')
             self.poses_2d.append(kps)
             self.cameras_data.append(cam['intrinsic'])
 

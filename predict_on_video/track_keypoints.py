@@ -55,7 +55,7 @@ class TrackKeypoints:
                                                                     det_thredh=0.0,
                                                                     frame_rate=25,
                                                                     track_buffer=10,
-                                                                    assignment_thresh=[0.7,0.7])
+                                                                    assignment_thresh=[0.9,0.9])
             for tid,tbbox,tidx in zip(tracked_id.numpy(),tracked_bboxes.numpy(),tracked_idx.numpy()):
                 if tid not in self.keypoints:
                     self.keypoints[tid] = {}

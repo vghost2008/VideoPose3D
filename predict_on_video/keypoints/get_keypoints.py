@@ -103,7 +103,7 @@ class KPDetection:
         preds[:, :, 0] = (preds[:, :, 0]) % width #x
         preds[:, :, 1] = np.floor((preds[:, :, 1]) / width) #y
 
-        pred_mask = np.tile(np.greater(maxvals, 0.0), (1, 1, 2))
+        pred_mask = np.tile(np.greater(maxvals, 0.05), (1, 1, 2))
         pred_mask = pred_mask.astype(np.float32)
 
         preds *= pred_mask
