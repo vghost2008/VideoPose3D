@@ -24,6 +24,16 @@ def weighted_mpjpe(predicted, target, w):
     assert w.shape[0] == predicted.shape[0]
     return torch.mean(w * torch.norm(predicted - target, dim=len(target.shape)-1))
 
+def weighted_mpjpe_ignore_offset(predicted, target, w):
+    """
+    Weighted mean per-joint position error (i.e. mean Euclidean distance)
+    """
+    assert predicted.shape == target.shape
+    assert w.shape[0] == predicted.shape[0]
+    offset = torch.mean((predicted-target)*w,[0,1,2],keepdim=True)
+    error = predicted-target-offset
+    return torch.mean(w * torch.norm(error, dim=len(target.shape)-1))
+
 def p_mpjpe(predicted, target):
     """
     Pose error: MPJPE after rigid alignment (scale, rotation, and translation),

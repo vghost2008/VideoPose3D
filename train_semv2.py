@@ -288,7 +288,7 @@ train_generator_eval = UnchunkedGenerator(cameras_train, poses_train, poses_trai
                                           pad=pad, causal_shift=causal_shift, augment=False)
 print('INFO: Training on {} frames'.format(train_generator_eval.num_frames()))
 if semi_supervised:
-    semi_generator = ChunkedGenerator(args.batch_size//args.stride, cameras_semi, None, poses_semi_2d, args.stride,
+    semi_generator = ChunkedGenerator(args.batch_size//args.stride//2, cameras_semi, None, poses_semi_2d, args.stride,
                                       pad=pad, causal_shift=causal_shift, shuffle=True,
                                       random_seed=4321, augment=args.data_augmentation,
                                       kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, joints_right=joints_right,
@@ -341,13 +341,14 @@ while epoch < args.epochs:
 
             # Fall back to supervised training for the first epoch (to avoid instability)
             skip = epoch < args.warmup
-            #skip = False #wj debug
+            skip = False #wj debug
 
             mask_p = np.random.rand(*batch_2d.shape[:-1])>0.03
             mask_p0 = batch_2d[...,-1]>1e-8
             mask_p = np.logical_and(mask_p,mask_p0)
-            mask_p = mask_p.astype(np.float32)
-            batch_2d[...,-1] = mask_p
+            mask_pf = mask_p.astype(np.float32)
+            batch_2d[np.logical_not(mask_p)] = np.random.rand()*2-1
+            batch_2d[...,-1] = mask_pf
 
             mask_p_sem = batch_2d_semi[...,-1]>0.015
             mask_p_sem = mask_p_sem.astype(np.float32)
@@ -405,7 +406,8 @@ while epoch < args.epochs:
                 projection_func = project_to_2d_linear if args.linear_projection else project_to_2d
                 reconstruction_semi = projection_func(predicted_semi + predicted_traj_cat[split_idx:], cam_semi)
 
-                loss_reconstruction = weighted_mpjpe(reconstruction_semi, target_semi,target_semi_w) # On 2D poses
+                #loss_reconstruction = weighted_mpjpe(reconstruction_semi, target_semi,target_semi_w) # On 2D poses
+                loss_reconstruction = weighted_mpjpe_ignore_offset(reconstruction_semi, target_semi,target_semi_w) # On 2D poses
                 epoch_loss_2d_train_unlabeled += predicted_semi.shape[0]*predicted_semi.shape[1] * loss_reconstruction.item()
                 if not args.no_proj:
                     loss_total += loss_reconstruction
@@ -454,6 +456,9 @@ while epoch < args.epochs:
     losses_3d_train.append(epoch_loss_3d_train / N)
     sys.stdout.flush()
     # End-of-epoch evaluation
+    eval_step = 10
+    eval_done = False
+    eval_start_time = time()
     with torch.no_grad():
         model_pos.load_state_dict(model_pos_train.state_dict())
         model_pos.eval()
@@ -466,7 +471,8 @@ while epoch < args.epochs:
         epoch_loss_2d_valid = 0
         N = 0
         
-        if not args.no_eval:
+        if not args.no_eval and epoch%eval_step==0:
+            eval_done = True
             # Evaluate on test set
             for cam, batch, batch_2d in test_generator.next_epoch():
                 inputs_3d = torch.from_numpy(batch.astype('float32'))
@@ -582,13 +588,14 @@ while epoch < args.epochs:
 
     elapsed = (time() - start_time)/60
     
-    if args.no_eval:
+    if not eval_done:
         print('[%d] time %.2f lr %f 3d_train %f' % (
                 epoch + 1,
                 elapsed,
                 lr,
                 losses_3d_train[-1] * 1000))
     else:
+        print(f"Eval time {(time()-eval_start_time)/60}")
         if semi_supervised:
             print('[%d] time %.2f lr %f 3d_train %f 3d_eval %f traj_eval %f 3d_valid %f '
                   'traj_valid %f 2d_train_sup %f 2d_train_unsup %f 2d_valid %f' % (

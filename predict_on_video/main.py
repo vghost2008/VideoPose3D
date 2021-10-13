@@ -22,7 +22,7 @@ tf.enable_eager_execution()
 def parse_args():
     parser = argparse.ArgumentParser(description='Predict script')
     #parser.add_argument('-v', '--video', default='/home/wj/ai/mldata/pose3d/tennis1.mp4', type=str, metavar='NAME',
-    parser.add_argument('-v', '--video', default='/home/wj/ai/mldata/pose3d/basketball1.mp4', type=str, metavar='NAME',
+    parser.add_argument('-v', '--video', default='/home/wj/ai/mldata/pose3d/basketball2.mp4', type=str, metavar='NAME',
                         help='target dataset')  # h36m or humaneva
     parser.add_argument('-s', '--save_dir', default='/home/wj/ai/0day/b', type=str, metavar='NAME',
                         help='save data dir path')  # h36m or humaneva
