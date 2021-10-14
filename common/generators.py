@@ -43,7 +43,9 @@ class ChunkedGenerator:
             offset = (n_chunks * chunk_length - poses_2d[i].shape[0]) // 2
             bounds = np.arange(n_chunks+1)*chunk_length - offset
             augment_vector = np.full(len(bounds - 1), False, dtype=bool)
-            pairs += zip(np.repeat(i, len(bounds - 1)), bounds[:-1], bounds[1:], augment_vector)
+            lpairs = list(zip(np.repeat(i, len(bounds - 1)), bounds[:-1], bounds[1:], augment_vector))
+            print(f"Pairs for {i} is {len(lpairs)}")
+            pairs += lpairs
             if augment:
                 pairs += zip(np.repeat(i, len(bounds - 1)), bounds[:-1], bounds[1:], ~augment_vector)
 

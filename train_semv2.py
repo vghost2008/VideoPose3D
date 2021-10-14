@@ -1,7 +1,7 @@
 import numpy as np
 import os
 
-os.environ['CUDA_VISIBLE_DEVICES'] = "3"
+os.environ['CUDA_VISIBLE_DEVICES'] = "1"
 from common.arguments import parse_args
 import torch
 
@@ -19,7 +19,7 @@ from time import time
 from common.utils import deterministic_random
 
 args = parse_args()
-args.checkpoint = args.checkpoint+"_semv2"
+args.checkpoint = args.checkpoint+"_semv3"
 in_features = 3
 print(args)
 
@@ -341,7 +341,7 @@ while epoch < args.epochs:
 
             # Fall back to supervised training for the first epoch (to avoid instability)
             skip = epoch < args.warmup
-            skip = False #wj debug
+            #skip = False #wj debug
 
             mask_p = np.random.rand(*batch_2d.shape[:-1])>0.03
             mask_p0 = batch_2d[...,-1]>1e-8

@@ -21,8 +21,8 @@ tf.enable_eager_execution()
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Predict script')
-    #parser.add_argument('-v', '--video', default='/home/wj/ai/mldata/pose3d/tennis1.mp4', type=str, metavar='NAME',
-    parser.add_argument('-v', '--video', default='/home/wj/ai/mldata/pose3d/basketball2.mp4', type=str, metavar='NAME',
+    parser.add_argument('-v', '--video', default='/home/wj/ai/mldata/pose3d/tennis1.mp4', type=str, metavar='NAME',
+    #parser.add_argument('-v', '--video', default='/home/wj/ai/mldata/pose3d/basketball2.mp4', type=str, metavar='NAME',
                         help='target dataset')  # h36m or humaneva
     parser.add_argument('-s', '--save_dir', default='/home/wj/ai/0day/b', type=str, metavar='NAME',
                         help='save data dir path')  # h36m or humaneva
@@ -37,9 +37,13 @@ class VideoPose3DModel:
     def __init__(self,ckpt_pos,ckpt_traj=None,use_scores=False) -> None:
         self.device = torch.device("cuda:0")
         filter_widths = [3,3,3,3,3]
-        #filter_widths = [3,3,3]
+        filter_widths = [3,3,3]
+        if use_scores:
+            in_features = 3
+        else:
+            in_features = 2
         self.model_pos = TemporalModel(num_joints_in=17,
-                     in_features=2,num_joints_out=17,
+                     in_features=in_features,num_joints_out=17,
                      filter_widths=filter_widths,
                      causal=False,
                      channels=1024,dense=False)
@@ -53,7 +57,7 @@ class VideoPose3DModel:
             checkpoint = torch.load(ckpt_traj)
         if 'model_traj' in checkpoint:
             self.model_traj = TemporalModel(num_joints_in=17,
-                     in_features=2,num_joints_out=1,
+                     in_features=in_features,num_joints_out=1,
                      filter_widths=filter_widths,
                      causal=False,
                      channels=1024,dense=False)
@@ -98,7 +102,7 @@ class VideoPose3DModel:
         data: [N,17]
         '''
         data = data[:,0]
-        window = 20
+        window = 60
         if len(data)<=window:
             v = np.mean(data)
             offset = np.array([v]*len(data),dtype=np.float32)
@@ -139,10 +143,12 @@ class VideoPose3DModel:
         '''
         kps: [N,17,2+x]
         '''
-        kps = np.array(kps)[...,:2]
+        kps = np.array(kps)
         if self.use_scores:
             scores = (np.array(kps)[...,2:]>0.015).astype(np.float32)
             scores = np.expand_dims(scores,axis=0)
+            scores = np.pad(scores,[[0,0],[self.pad,self.pad],[0,0],[0,0]],mode='edge')
+        kps = kps[...,:2]
 
         data0 = [kps[0]]*self.pad
         data1 = [kps[-1]]*self.pad
@@ -190,7 +196,7 @@ class VideoPose3DModel:
 
             pos_3d = np.mean(pos_3d,axis=0,keepdims=True)
 
-        if self.model_traj is not None:
+        if False and self.model_traj is not None:
             offset = self.model_traj(data_traj)
             offset = offset.cpu().detach().numpy()
             if flip:
@@ -373,15 +379,24 @@ if __name__ == "__main__":
     args = parse_args()
     video_path = args.video
     #video_path = "/home/wj/ai/mldata/human3.6/S6/Videos/_ALL.54138969.mp4"
-    save_dir = "/home/wj/ai/mldata/pose3d/tmp/predict_on_video_"+wmlu.base_name(video_path)
+    use_scores = False
+    if use_scores:
+        suffix = "_v2"
+    else:
+        suffix = "_v1"
+    save_dir = "/home/wj/ai/mldata/pose3d/tmp/predict_on_video_"+wmlu.base_name(video_path)+suffix
     cache_dir = "/home/wj/ai/mldata/pose3d/tmp/cache"
     #ckpt_pos = 'weights/pretrained_h36m_detectron_coco.bin'
     ckpt_pos = 'weights/epoch_80.bin'
     ckpt_traj = 'weights/epoch_80.bin'
-    ckpt_pos = 'weights_sem/epoch_20.bin'
+    if use_scores:
+        ckpt_pos = 'weights_semv2/epoch_30.bin'
+    else:
+        ckpt_pos = 'weights_sem/epoch_30.bin'
+        ckpt_pos = 'weights/epoch_80.bin'
     ckpt_traj = ckpt_pos
     #ckpt_traj = None
-    video_pos_3d = VideoPose3DModel(ckpt_pos=ckpt_pos,ckpt_traj=ckpt_traj)
+    video_pos_3d = VideoPose3DModel(ckpt_pos=ckpt_pos,ckpt_traj=ckpt_traj,use_scores=use_scores)
 
     if 'tmp' in save_dir:
         wmlu.create_empty_dir(save_dir,True,True)
