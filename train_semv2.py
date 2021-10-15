@@ -1,7 +1,7 @@
 import numpy as np
 import os
 
-os.environ['CUDA_VISIBLE_DEVICES'] = "1"
+os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 from common.arguments import parse_args
 import torch
 
@@ -31,6 +31,7 @@ except OSError as e:
         raise RuntimeError('Unable to create checkpoint directory:', args.checkpoint)
 
 semi_supervised = True
+torch_device = torch.device("cuda:0")
 print('Loading dataset...')
 dataset_path = 'data/data_3d_' + args.dataset + '.npz'
 if args.dataset == 'h36m':
@@ -288,7 +289,7 @@ train_generator_eval = UnchunkedGenerator(cameras_train, poses_train, poses_trai
                                           pad=pad, causal_shift=causal_shift, augment=False)
 print('INFO: Training on {} frames'.format(train_generator_eval.num_frames()))
 if semi_supervised:
-    semi_generator = ChunkedGenerator(args.batch_size//args.stride//2, cameras_semi, None, poses_semi_2d, args.stride,
+    semi_generator = ChunkedGenerator(args.batch_size//args.stride, cameras_semi, None, poses_semi_2d, args.stride,
                                       pad=pad, causal_shift=causal_shift, shuffle=True,
                                       random_seed=4321, augment=args.data_augmentation,
                                       kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, joints_right=joints_right,
@@ -383,12 +384,14 @@ while epoch < args.epochs:
             loss_3d_pos = mpjpe(predicted_3d_pos_cat[:split_idx], inputs_3d)
             epoch_loss_3d_train += inputs_3d.shape[0]*inputs_3d.shape[1] * loss_3d_pos.item()
             N += inputs_3d.shape[0]*inputs_3d.shape[1]
+            loss_3d_pos_np = loss_3d_pos.item()
             loss_total = loss_3d_pos
 
             # Compute global trajectory
             predicted_traj_cat = model_traj_train(inputs_2d_cat)
             w = 1 / inputs_traj[:, :, :, 2] # loss weight inversely proportional to depth
             loss_traj = weighted_mpjpe(predicted_traj_cat[:split_idx], inputs_traj, w)
+            loss_traj_np = loss_traj.item()
             epoch_loss_traj_train += inputs_3d.shape[0]*inputs_3d.shape[1] * loss_traj.item()
             assert inputs_traj.shape[0]*inputs_traj.shape[1] == inputs_3d.shape[0]*inputs_3d.shape[1]
             loss_total += loss_traj
@@ -404,11 +407,17 @@ while epoch < args.epochs:
                     target_semi_w = inputs_2d_semi[:, :, :, 2:].contiguous()
                     
                 projection_func = project_to_2d_linear if args.linear_projection else project_to_2d
-                reconstruction_semi = projection_func(predicted_semi + predicted_traj_cat[split_idx:], cam_semi)
+                reconstruction_semi = projection_func(predicted_semi + predicted_traj_cat[split_idx:], cam_semi) #[B,N,17,2]
 
                 #loss_reconstruction = weighted_mpjpe(reconstruction_semi, target_semi,target_semi_w) # On 2D poses
-                loss_reconstruction = weighted_mpjpe_ignore_offset(reconstruction_semi, target_semi,target_semi_w) # On 2D poses
+                reconstruction_semi[:,:,SemDataset.COCO_ID_VALID,:] = reconstruction_semi[:,:,SemDataset.H36M_ID_VALID,:]
+                coco_mask = torch.from_numpy(SemDataset.COCO_MASK).to(torch_device)
+                target_semi_w = target_semi_w*coco_mask
+                loss_reconstruction = weighted_mpjpe_ignore_trans(reconstruction_semi, target_semi,target_semi_w,
+                    joints_pair_a=SemDataset.PAIRS_A,
+                    joints_pair_b=SemDataset.PAIRS_B) # On 2D poses
                 epoch_loss_2d_train_unlabeled += predicted_semi.shape[0]*predicted_semi.shape[1] * loss_reconstruction.item()
+                loss_reconstruction_np = loss_reconstruction.item()
                 if not args.no_proj:
                     loss_total += loss_reconstruction
                 
@@ -416,12 +425,17 @@ while epoch < args.epochs:
                 if args.bone_length_term:
                     dists = predicted_3d_pos_cat[:, :, 1:] - predicted_3d_pos_cat[:, :, dataset.skeleton().parents()[1:]]
                     bone_lengths = torch.mean(torch.norm(dists, dim=3), dim=1)
-                    penalty = torch.mean(torch.abs(torch.mean(bone_lengths[:split_idx], dim=0) \
-                                                 - torch.mean(bone_lengths[split_idx:], dim=0)))
+
+                    lengths0 = bone_lengths[:split_idx]
+                    lengths1 = bone_lengths[split_idx:]
+                    r = torch.sum(lengths0,dim=1,keepdim=True)/(torch.sum(lengths1,dim=1,keepdim=True)+1e-8)
+                    penalty = torch.mean(torch.abs(torch.mean(lengths0, dim=0) \
+                                                 - torch.mean(lengths1*r.detach(), dim=0)))
+                    penalty_np = penalty.item()
                     loss_total += penalty
                     
-                
                 N_semi += predicted_semi.shape[0]*predicted_semi.shape[1]
+                print(f"3d loss={loss_3d_pos_np:5.2f}, loss traj={loss_traj_np:5.2f}, recon loss={loss_reconstruction_np:5.2f}, bone penalty={penalty_np:5.2f}.")
             else:
                 N_semi += 1 # To avoid division by zero
 
@@ -689,5 +703,5 @@ while epoch < args.epochs:
 
 
 '''
-train_semv2.py --subjects-train S1,S11,S9,S5,S6,S7,S8  -e 100 -lrd 0.98 -arc 3,3,3,3,3 --warmup 5 -b 1024 -k detectron_pt_coco --dataset h36m 
+train_semv2.py --subjects-train S1,S11,S9,S5,S6,S7,S8  -e 100 -lrd 0.98 -arc 3,3,3,3 --warmup 3 -b 512 -k detectron_pt_coco --dataset h36m 
 '''

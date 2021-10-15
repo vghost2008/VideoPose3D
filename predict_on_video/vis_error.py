@@ -14,10 +14,117 @@ from common.model import TemporalModel
 from common.camera import *
 import matplotlib.pyplot as plt
 import pickle
+from collections import Iterable
+import copy
 os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 matplotlib.use('Agg')
 
 tf.enable_eager_execution()
+global_cam = {'id': '54138969',
+'center': [512.54150390625, 515.4514770507812],
+'focal_length': [1145.0494384765625, 1143.7811279296875],
+'radial_distortion': [-0.20709891617298126, 0.24777518212795258, -0.0030751503072679043],
+'tangential_distortion': [-0.0009756988729350269, -0.00142447161488235],
+'res_w': 1000,
+'res_h': 1002,
+#'res_w': 1280,
+#'res_h': 720,
+'azimuth': 70, # Only used for visualizatio
+'orientation': [0.1407056450843811, -0.1500701755285263, -0.755240797996521, 0.6223280429840088],
+'translation': [1841.1070556640625, 4955.28466796875, 1563.4454345703125],
+}
+'''
+COCO_KEYPOINT_INDEXES = {
+    0: 'nose',
+    1: 'left_eye',
+    2: 'right_eye',
+    3: 'left_ear',
+    4: 'right_ear',
+    5: 'left_shoulder',
+    6: 'right_shoulder',
+    7: 'left_elbow',
+    8: 'right_elbow',
+    9: 'left_wrist',
+    10: 'right_wrist',
+    11: 'left_hip',
+    12: 'right_hip',
+    13: 'left_knee',
+    14: 'right_knee',
+    15: 'left_ankle',
+    16: 'right_ankle'
+}
+ H36M_NAMES = ['']*32
+  H36M_NAMES[0]  = 'Hip'
+  H36M_NAMES[1]  = 'RHip'
+  H36M_NAMES[2]  = 'RKnee'
+  H36M_NAMES[3]  = 'RFoot'
+  H36M_NAMES[4]  = 'RFootTip'
+  H36M_NAMES[6]  = 'LHip'
+  H36M_NAMES[7]  = 'LKnee'
+  H36M_NAMES[8]  = 'LFoot'
+  H36M_NAMES[12] = 'Spine'
+  H36M_NAMES[13] = 'Thorax'
+  H36M_NAMES[14] = 'Neck/Nose'
+  H36M_NAMES[15] = 'Head'
+  H36M_NAMES[17] = 'LShoulder'
+  H36M_NAMES[18] = 'LElbow'
+  H36M_NAMES[19] = 'LWrist'
+  H36M_NAMES[25] = 'RShoulder'
+  H36M_NAMES[26] = 'RElbow'
+  H36M_NAMES[27] = 'RWrist'
+'''
+keep_joints=[0, 1, 2, 3, 6, 7, 8, 12, 13, 14, 15, 17, 18, 19,25,26,27] 
+id_map = {}
+id_map[3] = 16
+id_map[8] = 15
+id_map[2] = 14
+id_map[7] = 13
+id_map[1] = 12
+id_map[6] = 11
+id_map[19] = 9
+id_map[27] = 10
+id_map[26] = 8
+id_map[18] = 7
+id_map[25] = 6
+id_map[17] = 5
+id_map[14] = 0
+rid_map = [-1]*17
+
+for k,v in id_map.items():
+    idx = keep_joints.index(k)
+    rid_map[idx] = v
+
+joints_pair = [[5 , 6], [5 , 11],
+[6 , 12], [11 , 12], [5 , 7], [7 , 9], [6 , 8], [8 , 10], [11 , 13], [13 , 15], [12 , 14], [14 , 16]]
+joints_pair_a,joints_pair_b = [list(x) for x in zip(*joints_pair)]
+
+
+def process_cam(cam):
+    if not isinstance(cam['radial_distortion'],Iterable):
+        cam['radial_distortion'] = [cam['radial_distortion'],0.0,0.0]
+    for k, v in cam.items():
+        if k not in ['id', 'res_w', 'res_h']:
+            cam[k] = np.array(v, dtype='float32')
+        if 'tangential_distortion' not in cam:
+            cam['tangential_distortion'] = [0.0,0.0]
+        
+    # Normalize camera frame
+    cam['center'] = normalize_screen_coordinates(cam['center'], w=cam['res_w'], h=cam['res_h']).astype('float32')
+    cam['focal_length'] = cam['focal_length']/cam['res_w']*2
+    if 'translation' in cam:
+        cam['translation'] = cam['translation']/1000 # mm to meters
+    
+    # Add intrinsic parameters vector
+    cam['intrinsic'] = np.concatenate((cam['focal_length'], #2
+                                       cam['center'], #2
+                                       cam['radial_distortion'], #3
+                                       cam['tangential_distortion'])) #2
+def update_camera(img,cam):
+    if img is not None:
+        #cam['res_h'] = img.shape[0]
+        #cam['res_w'] = img.shape[1]
+        pass
+    process_cam(cam)
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Predict script')
@@ -38,7 +145,7 @@ class VideoPose3DModel:
         self.device = torch.device("cuda:0")
         filter_widths = [3,3,3,3,3]
         filter_widths = [3,3,3,3]
-        #filter_widths = [3,3,3]
+        filter_widths = [3,3,3]
         if use_scores:
             in_features = 3
         else:
@@ -71,24 +178,24 @@ class VideoPose3DModel:
         self.kps_right = [2, 4, 6, 8, 10, 12, 14, 16]
         self.joints_left = [4, 5, 6, 11, 12, 13]
         self.joints_right = [1, 2, 3, 14, 15, 16]
-        self.cam = {'id': '54138969',
-        'center': [512.54150390625, 515.4514770507812],
-        'focal_length': [1145.0494384765625, 1143.7811279296875],
-        'radial_distortion': [-0.20709891617298126, 0.24777518212795258, -0.0030751503072679043],
-        'tangential_distortion': [-0.0009756988729350269, -0.00142447161488235],
-        #'res_w': 1000,
-        #'res_h': 1002,
-        'res_w': 1280,
-        'res_h': 720,
-        'azimuth': 70, # Only used for visualizatio
-        'orientation': [0.1407056450843811, -0.1500701755285263, -0.755240797996521, 0.6223280429840088],
-        'translation': [1841.1070556640625, 4955.28466796875, 1563.4454345703125],
-        }
+        self.cam = copy.deepcopy(global_cam)
         self.use_scores = use_scores
+        self.good_id0 = []
+        self.good_id1 = []
+        self.unused_id0 = []
+        self.unused_id1 = []
+        for i,v in enumerate(rid_map):
+            if v>=0 :
+                self.good_id0.append(i)
+                self.good_id1.append(v)
+            else:
+                self.unused_id0.append(i)
+        for i in range(len(rid_map)):
+            if i not in self.good_id1:
+                self.unused_id1.append(i)
 
     def update_camera(self,img):
-        self.cam['res_h'] = img.shape[0]
-        self.cam['res_w'] = img.shape[1]
+        update_camera(img,self.cam)
 
     @staticmethod
     def normalize_screen_coordinates(X, w, h): 
@@ -96,60 +203,26 @@ class VideoPose3DModel:
     
         # Normalize so that [0, w] is mapped to [-1, 1], while preserving the aspect ratio
         return X/w*2 - [1, h/w]
+
+    @staticmethod
+    def unnormalize_screen_coordinates(X, w, h): 
+        assert X.shape[-1] == 2
     
-    @staticmethod
-    def get_offset(data):
-        '''
-        data: [N,17]
-        '''
-        data = data[:,0]
-        window = 60
-        if len(data)<=window:
-            v = np.mean(data)
-            offset = np.array([v]*len(data),dtype=np.float32)
-            offset = np.expand_dims(offset,axis=-1)
-            return offset
-        else:
-            v = np.mean(data[:window])
-            offset = [v]*window
-            for i in range(window,len(data)):
-                v = v+(data[i]-data[i-window])/window
-                offset.append(v)
-            offset = np.array(offset,dtype=np.float32)
-            offset = np.expand_dims(offset,axis=-1)
-            return offset
-
-    @staticmethod
-    def trans_kps(kps):
-        x = kps[...,0]
-        y = kps[...,1]
-        xoffset = VideoPose3DModel.get_offset(x)
-        yoffset = VideoPose3DModel.get_offset(y)
-        x = x-xoffset
-        y = y-yoffset
-        minx = np.min(x)
-        maxx = np.max(x)
-        miny = np.min(y)
-        maxy = np.max(y)
-        width = maxx-minx+1e-4
-        height = maxy-miny+1e-4
-        r = min(1.0/width,1.0/height)
-        offset = np.array([-(maxx+minx)/2,-(maxy+miny)/2],dtype=np.float32)
-        offset = np.reshape(offset,[1,1,2]) 
-        print(f"Scalar: {r}")
-        return r,offset,np.stack([x,y],axis=-1)
-
-
-    def __call__(self,kps,scale_data=False,flip=True):
+        # Normalize so that [0, w] is mapped to [-1, 1], while preserving the aspect ratio
+        return (X + [1, h/w])*w/2
+    
+    def __call__(self,kps,flip=True):
         '''
         kps: [N,17,2+x]
         '''
         kps = np.array(kps)
+        scores = (np.array(kps)[...,2:]>0.015).astype(np.float32)
+        scores_mask = np.array(scores)
         if self.use_scores:
-            scores = (np.array(kps)[...,2:]>0.015).astype(np.float32)
             scores = np.expand_dims(scores,axis=0)
             scores = np.pad(scores,[[0,0],[self.pad,self.pad],[0,0],[0,0]],mode='edge')
         kps = kps[...,:2]
+        org_kps = np.array(kps)
 
         data0 = [kps[0]]*self.pad
         data1 = [kps[-1]]*self.pad
@@ -161,14 +234,6 @@ class VideoPose3DModel:
             data = np.stack([data_org,data_agu],axis=0)
             data = self.normalize_screen_coordinates(data,cam['res_w'],cam['res_h'])
             data_traj = data
-        elif scale_data:
-            data = self.normalize_screen_coordinates(data_org,cam['res_w'],cam['res_h'])
-            data_traj = np.array(data)
-            r,offset,new_data = self.trans_kps(data)
-            data[...,:2] = new_data
-            data[...,:2] = (data[...,:2]+offset)*r
-            data = np.expand_dims(data,axis=0)
-            data_traj = np.expand_dims(data_traj,axis=0)
         else:
             data = data_org
             data = self.normalize_screen_coordinates(data_org,cam['res_w'],cam['res_h'])
@@ -197,40 +262,60 @@ class VideoPose3DModel:
 
             pos_3d = np.mean(pos_3d,axis=0,keepdims=True)
 
-        if False and self.model_traj is not None:
+        if self.model_traj is not None:
             offset = self.model_traj(data_traj)
             offset = offset.cpu().detach().numpy()
             if flip:
                 offset[1,:,:,0] = offset[1,:,:,0]*-1
                 offset = np.mean(offset,axis=0,keepdims=True)
             pos_3d = pos_3d+offset
+        #projection_func = project_to_2d_linear 
+        projection_func = npproject_to_2d
+        pred_2d = projection_func(pos_3d, np.expand_dims(self.cam['intrinsic'],axis=0))
+        pred_2d = np.squeeze(pred_2d,axis=0)
+        pred_2d = self.unnormalize_screen_coordinates(pred_2d,cam['res_w'],cam['res_h'])
 
-        return np.squeeze(pos_3d,axis=0)
+        pred_2d[:,self.good_id1] = pred_2d[:,self.good_id0]
+        mask = np.ones([1,17,1],dtype=np.float32)
+        mask[:,self.unused_id1] = 0
+        shape = pred_2d.shape
+        scores = np.ones([shape[0],shape[1],1],dtype=np.float32)
+        scores[:,self.unused_id1] = 0
+
+        dis1 = pred_2d[:,joints_pair_a]-pred_2d[:,joints_pair_b]
+        dis2_mask = scores_mask[:,joints_pair_a]*scores_mask[:,joints_pair_b]
+        dis2 = org_kps[:,joints_pair_a]-org_kps[:,joints_pair_b]
+        dis2 = np.linalg.norm(dis2,2,axis=-1,keepdims=True)*dis2_mask
+        dis1 = np.linalg.norm(dis1,2,axis=-1,keepdims=True)*dis2_mask
+        dis1 = np.sum(dis1,axis=1,keepdims=True)
+        dis2 = np.sum(dis2,axis=1,keepdims=True)
+        r = dis2/dis1
+        pred_2d = pred_2d*r
+
+        r_mask = mask*scores_mask
+        nr = np.sum(r_mask,axis=1,keepdims=True)
+        base_offset = (pred_2d-org_kps)*mask*scores_mask
+        base_offset = np.sum(base_offset,axis=1,keepdims=True)/nr
+        pred_2d = pred_2d-base_offset
+
+
+        error = np.mean(np.abs(pred_2d-org_kps)*r_mask)
+        print(f"Error {error}")
+
+        return np.squeeze(pos_3d,axis=0),np.concatenate([pred_2d,scores],axis=-1)
 
 class RenderAnimation:
-    def __init__(self,frames,pos_3d,keypoints) -> None:
+    def __init__(self,frames,pos_3d,keypoints,pred_keypoints) -> None:
         self.frames = frames
         self.pos_3d = np.array(pos_3d)
         self.keypoints = np.array(keypoints)
+        self.pred_keypoints = np.array(pred_keypoints)
         self.joints_left = [4, 5, 6, 11, 12, 13]
         self.joints_right = [1, 2, 3, 14, 15, 16]
-        self.cam = {'id': '54138969',
-        'center': [512.54150390625, 515.4514770507812],
-        'focal_length': [1145.0494384765625, 1143.7811279296875],
-        'radial_distortion': [-0.20709891617298126, 0.24777518212795258, -0.0030751503072679043],
-        'tangential_distortion': [-0.0009756988729350269, -0.00142447161488235],
-        #'res_w': 1000,
-        #'res_h': 1002,
-        'res_w': 1280,
-        'res_h': 720,
-        'azimuth': 70, # Only used for visualizatio
-        'orientation': [0.1407056450843811, -0.1500701755285263, -0.755240797996521, 0.6223280429840088],
-        'translation': [1841.1070556640625, 4955.28466796875, 1563.4454345703125],
-        }
+        self.cam = copy.deepcopy(global_cam)
 
     def update_camera(self,img):
-        self.cam['res_h'] = img.shape[0]
-        self.cam['res_w'] = img.shape[1]
+        update_camera(img,self.cam)
 
     def render_animation(self, 
                          limit=-1, size=6, save_path=""):
@@ -358,6 +443,8 @@ class RenderAnimation:
             image_from_plot = image_from_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
             img = np.array(all_frames[i])
             show_keypoints(img,keypoints[i])
+            #show_keypoints(img,self.pred_keypoints[i],color=(255,0,0))
+            show_keypoints_diff(img,keypoints[i],self.pred_keypoints[i],color=(255,0,0))
             image_from_plot = resize_height(image_from_plot,h=img.shape[0])
             img = np.concatenate([img,image_from_plot],axis=1)
             if writer is None:
@@ -379,30 +466,29 @@ class RenderAnimation:
 if __name__ == "__main__":
     args = parse_args()
     video_path = args.video
-    #video_path = "/home/wj/ai/mldata/human3.6/S6/Videos/_ALL.54138969.mp4"
-    use_scores = True
+    video_path = "/home/wj/ai/mldata/human3.6/S6/Videos/Walking.54138969.mp4"
+    video_path = "/home/wj/ai/mldata/totalcapture/s1_freestyle1/freestyle1/TC_S1_freestyle1_cam1.mp4"
+    use_scores = False
     if use_scores:
         suffix = "_v3"
     else:
         suffix = "_v1"
-    save_dir = "/home/wj/ai/mldata/pose3d/tmp/predict_on_video_"+wmlu.base_name(video_path)+suffix
+    save_dir = "/home/wj/ai/mldata/pose3d/tmp/vis_error"
     cache_dir = "/home/wj/ai/mldata/pose3d/tmp/cache"
     #ckpt_pos = 'weights/pretrained_h36m_detectron_coco.bin'
     ckpt_pos = 'weights/epoch_80.bin'
     ckpt_traj = 'weights/epoch_80.bin'
     if use_scores:
-        ckpt_pos = 'weights_semv3/epoch_50.bin'
+        ckpt_pos = 'weights_semv3/epoch_10.bin'
     else:
         ckpt_pos = 'weights_sem/epoch_30.bin'
         ckpt_pos = 'weights/epoch_80.bin'
     ckpt_traj = ckpt_pos
+    name_suffix = osp.dirname(ckpt_pos)+"_"+osp.basename(ckpt_pos)+suffix
     #ckpt_traj = None
     video_pos_3d = VideoPose3DModel(ckpt_pos=ckpt_pos,ckpt_traj=ckpt_traj,use_scores=use_scores)
 
-    if 'tmp' in save_dir:
-        wmlu.create_empty_dir(save_dir,True,True)
-    else:
-        wmlu.create_empty_dir(save_dir,False)
+    wmlu.create_empty_dir(save_dir,False)
     wmlu.create_empty_dir(cache_dir,False)
 
     cache_path = osp.join(cache_dir,osp.basename(video_path))
@@ -431,7 +517,8 @@ if __name__ == "__main__":
             continue
         min_idx = np.min(idxs)
         max_idx = np.max(idxs)
-        save_path = osp.join(save_dir,f"{min_idx}_{max_idx}_{tid}.mp4")
+        max_idx = min(min_idx+1000,max_idx)
+        save_path = osp.join(save_dir,f"{name_suffix}_{min_idx}_{max_idx}_{tid}.mp4")
 
         all_keypoints = []
         all_frames = []
@@ -441,8 +528,8 @@ if __name__ == "__main__":
             cur_frame = frames[i]
             all_frames.append(cur_frame)
             all_keypoints.append(keypoints[i])
-        pos_3d = video_pos_3d(all_keypoints,scale_data=True,flip=False)
-        render_ani = RenderAnimation(all_frames,pos_3d,all_keypoints)
+        pos_3d,pred_2d = video_pos_3d(all_keypoints,flip=False)
+        render_ani = RenderAnimation(all_frames,pos_3d,all_keypoints,pred_2d)
         render_ani.update_camera(frames[0])
         render_ani.render_animation(save_path=save_path)
     print(f"Save path {save_dir}")

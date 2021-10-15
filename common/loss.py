@@ -24,14 +24,29 @@ def weighted_mpjpe(predicted, target, w):
     assert w.shape[0] == predicted.shape[0]
     return torch.mean(w * torch.norm(predicted - target, dim=len(target.shape)-1))
 
-def weighted_mpjpe_ignore_offset(predicted, target, w):
-    """
-    Weighted mean per-joint position error (i.e. mean Euclidean distance)
-    """
+def any_nan(v):
+    return torch.any(torch.isnan(v)).item()
+
+def show_minmax(name,v):
+    print(f"{name} min:{torch.min(v).item()}, max:{torch.max(v).item()}")
+def weighted_mpjpe_ignore_trans(predicted, target, w,joints_pair_a,joints_pair_b):
     assert predicted.shape == target.shape
     assert w.shape[0] == predicted.shape[0]
-    offset = torch.mean((predicted-target)*w,[0,1,2],keepdim=True)
-    error = predicted-target-offset
+
+    dis1 = predicted[:,:,joints_pair_a]-predicted[:,:,joints_pair_b]
+    dis2_mask = w[:,:,joints_pair_a]*w[:,:,joints_pair_b]
+    dis2 = target[:,:,joints_pair_a]-target[:,:,joints_pair_b]
+    dis2 = torch.norm(dis2,2,dim=-1,keepdim=True)*dis2_mask
+    dis1 = torch.norm(dis1,2,dim=-1,keepdim=True)*dis2_mask
+    dis1 = torch.sum(dis1,axis=2,keepdims=True)
+    dis2 = torch.sum(dis2,axis=2,keepdims=True)
+    r = dis2/(dis1+1e-5)
+    predicted = predicted*r.detach()
+
+    inv_w = torch.sum(w,2,keepdim=True)+1e-5
+    inv_w = 1.0/inv_w
+    offset = torch.sum((predicted-target)*w,2,keepdim=True)*inv_w
+    error = predicted-target-offset.detach()
     return torch.mean(w * torch.norm(error, dim=len(target.shape)-1))
 
 def p_mpjpe(predicted, target):
