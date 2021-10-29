@@ -33,6 +33,20 @@ global_cam = {'id': '54138969',
 'orientation': [0.1407056450843811, -0.1500701755285263, -0.755240797996521, 0.6223280429840088],
 'translation': [1841.1070556640625, 4955.28466796875, 1563.4454345703125],
 }
+'''global_cam = {
+    'res_h':1079,
+        'res_w':1919,
+        'focal_length':[1284.32,1286.38],
+        'center':[959.5,539.5],
+        'radial_distortion':[1.40869e-05,0,0],
+        'tangential_distortion': [0,0],
+        'R':[-0.99713,0.00504186,-0.0755413,
+        0.0221672,-0.93461,-0.354982,
+        -0.0723915,-0.355637,0.931816],
+        'azimuth': 70, # Only used for visualizatio
+'orientation': [0.1407056450843811, -0.1500701755285263, -0.755240797996521, 0.6223280429840088],
+'translation': [1841.1070556640625, 4955.28466796875, 1563.4454345703125],
+}'''
 '''
 COCO_KEYPOINT_INDEXES = {
     0: 'nose',
@@ -300,9 +314,17 @@ class VideoPose3DModel:
 
 
         error = np.mean(np.abs(pred_2d-org_kps)*r_mask)
+
+        res = np.squeeze(pos_3d,axis=0)
+        xmin,xmax = np.min(res[...,0],axis=1),np.max(res[...,0],axis=1)
+        ymin,ymax = np.min(res[...,1],axis=1),np.max(res[...,1],axis=1)
+        zmin,zmax = np.min(res[...,2],axis=1),np.max(res[...,2],axis=1)
+        bboxes = np.stack([xmax-xmin,ymax-ymin,zmax-zmin,xmax,ymax,zmax],axis=-1)
+        wmlu.show_list(bboxes)
         print(f"Error {error}")
 
-        return np.squeeze(pos_3d,axis=0),np.concatenate([pred_2d,scores],axis=-1)
+
+        return res,np.concatenate([pred_2d,scores],axis=-1)
 
 class RenderAnimation:
     def __init__(self,frames,pos_3d,keypoints,pred_keypoints) -> None:
@@ -467,7 +489,7 @@ if __name__ == "__main__":
     args = parse_args()
     video_path = args.video
     video_path = "/home/wj/ai/mldata/human3.6/S6/Videos/Walking.54138969.mp4"
-    video_path = "/home/wj/ai/mldata/totalcapture/s1_freestyle1/freestyle1/TC_S1_freestyle1_cam1.mp4"
+    #video_path = "/home/wj/ai/mldata/totalcapture/s1_freestyle1/freestyle1/TC_S1_freestyle1_cam1.mp4"
     use_scores = False
     if use_scores:
         suffix = "_v3"

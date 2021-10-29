@@ -132,6 +132,7 @@ class TemporalModel(TemporalModelBase):
             res = x[:, :, pad + shift : x.shape[2] - pad + shift]
             
             x = self.drop(self.relu(self.layers_bn[2*i](self.layers_conv[2*i](x))))
+            print(x.shape)
             x = res + self.drop(self.relu(self.layers_bn[2*i + 1](self.layers_conv[2*i + 1](x))))
         
         x = self.shrink(x)

@@ -31,7 +31,7 @@ class ChunkedGenerator:
                  chunk_length, pad=0, causal_shift=0,
                  shuffle=True, random_seed=1234,
                  augment=False, kps_left=None, kps_right=None, joints_left=None, joints_right=None,
-                 endless=False):
+                 endless=False,max_scale=None):
         assert poses_3d is None or len(poses_3d) == len(poses_2d), (len(poses_3d), len(poses_2d))
         assert cameras is None or len(cameras) == len(poses_2d)
 
@@ -56,7 +56,8 @@ class ChunkedGenerator:
             self.batch_3d = np.empty((batch_size, chunk_length, poses_3d[0].shape[-2], poses_3d[0].shape[-1]))
         self.batch_2d = np.empty((batch_size, chunk_length + 2*pad, poses_2d[0].shape[-2], poses_2d[0].shape[-1]))
 
-        self.num_batches = (len(pairs) + batch_size - 1) // batch_size
+        #self.num_batches = (len(pairs) + batch_size - 1) // batch_size #wj
+        self.num_batches = len(pairs)// batch_size
         self.batch_size = batch_size
         self.random = np.random.RandomState(random_seed)
         self.pairs = pairs
@@ -75,6 +76,7 @@ class ChunkedGenerator:
         self.kps_right = kps_right
         self.joints_left = joints_left
         self.joints_right = joints_right
+        self.max_scale = max_scale
         print(f"batch size = {self.batch_size}, len pose 3d {len(poses_3d) if poses_3d is not None else 0}, len pose 2d {len(poses_2d) if poses_2d is not None else 0}, len pairs {len(pairs)}")
 
     def num_frames(self):
@@ -150,6 +152,13 @@ class ChunkedGenerator:
                             # Flip horizontal distortion coefficients
                             self.batch_cam[i, 2] *= -1
                             self.batch_cam[i, 7] *= -1
+                    
+                    if self.max_scale is not None:
+                        if np.random.rand()<0.5:
+                            r = np.random.rand()*self.max_scale+0.8
+                            self.batch_3d[i, :, :, -1] *= r
+                            self.batch_2d[i, :, :, :2] /= r
+
 
                 if self.endless:
                     self.state = (b_i + 1, pairs)

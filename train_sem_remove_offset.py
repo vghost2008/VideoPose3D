@@ -1,25 +1,25 @@
 import numpy as np
 import os
-
+from common.toolkit import get_offset,get_mask_for_train
 os.environ['CUDA_VISIBLE_DEVICES'] = "3"
 from common.arguments import parse_args
 import torch
-
+import wml_utils as wmlu
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import sys
 import errno
-
 from common.camera import *
 from common.model import *
 from common.loss import *
 from common.generators import ChunkedGenerator, UnchunkedGenerator
 from time import time
 from common.utils import deterministic_random
+import cv2
 
 args = parse_args()
-args.checkpoint = args.checkpoint+"_semv3"
+args.checkpoint = args.checkpoint+"_semv4"
 in_features = 3
 print(args)
 
@@ -46,19 +46,6 @@ elif args.dataset.startswith('custom'):
 else:
     raise KeyError('Invalid dataset')
 
-print('Preparing data...')
-for subject in dataset.subjects():
-    for action in dataset[subject].keys():
-        anim = dataset[subject][action]
-        
-        if 'positions' in anim:
-            positions_3d = []
-            for cam in anim['cameras']:
-                pos_3d = world_to_camera(anim['positions'], R=cam['orientation'], t=cam['translation'])
-                pos_3d[:, 1:] -= pos_3d[:, :1] # Remove global offset, but keep trajectory in first position (first keypoint)
-                positions_3d.append(pos_3d)
-            anim['positions_3d'] = positions_3d
-
 print('Loading 2D detections...')
 keypoints_path = 'data/data_2d_' + args.dataset + '_' + args.keypoints + '.npz'
 print(f"Load keypoints {keypoints_path}.")
@@ -68,6 +55,36 @@ keypoints_symmetry = keypoints_metadata['keypoints_symmetry']
 kps_left, kps_right = list(keypoints_symmetry[0]), list(keypoints_symmetry[1])
 joints_left, joints_right = list(dataset.skeleton().joints_left()), list(dataset.skeleton().joints_right())
 keypoints = keypoints['positions_2d'].item()
+
+print('Preparing data...')
+for subject in dataset.subjects():
+    for action in dataset[subject].keys():
+        anim = dataset[subject][action]
+        
+        if 'positions' in anim:
+            positions_3d = []
+            for cam_idx,cam in enumerate(anim['cameras']):
+                pos_3d = world_to_camera(anim['positions'], R=cam['orientation'], t=cam['translation'])
+
+                #remove offset
+                if subject in dataset._data:
+                    kps_3d = pos_3d
+                    kps= keypoints[subject][action][cam_idx]
+                    #print(kps[0])
+                    kps_2d = kps[...,:2]
+                    offset = get_offset(kps_2d,kps_3d,cam)
+                    kps[...,:2] = kps[...,:2]+offset
+                    #image = np.zeros([1500,1500,3],dtype=np.uint8)
+                    #image = show_keypoints(image,kps[0])
+                    #cv2.imwrite("test.jpg",image)
+                    #print(keypoints[subject][action][cam_idx][0])
+                    print("Offset")
+                    wmlu.show_list(np.squeeze(offset,axis=0))
+
+                pos_3d[:, 1:] -= pos_3d[:, :1] # Remove global offset, but keep trajectory in first position (first keypoint)
+                positions_3d.append(pos_3d)
+            anim['positions_3d'] = positions_3d
+
 
 #shorten keypoints length to positions 3d's length (wjn)
 for subject in dataset.subjects():
@@ -95,7 +112,6 @@ for subject in keypoints.keys():
         for cam_idx, kps in enumerate(keypoints[subject][action]):
             # Normalize camera frame
             cam = dataset.cameras()[subject][cam_idx]
-            scores = kps[...,-1]
             kps[..., :2] = normalize_screen_coordinates(kps[..., :2], w=cam['res_w'], h=cam['res_h'])
             #wj 
             keypoints[subject][action][cam_idx] = kps
@@ -284,7 +300,8 @@ final_momentum = 0.001
 print(f"Batch size {args.batch_size}, stride {args.stride}")
 train_generator = ChunkedGenerator(args.batch_size//args.stride, cameras_train, poses_train, poses_train_2d, args.stride,
                                    pad=pad, causal_shift=causal_shift, shuffle=True, augment=args.data_augmentation,
-                                   kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, joints_right=joints_right)
+                                   kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, joints_right=joints_right,
+                                   max_scale=10.0)
 train_generator_eval = UnchunkedGenerator(cameras_train, poses_train, poses_train_2d,
                                           pad=pad, causal_shift=causal_shift, augment=False)
 print('INFO: Training on {} frames'.format(train_generator_eval.num_frames()))
@@ -346,12 +363,17 @@ while epoch < args.epochs:
             skip = epoch < args.warmup
             #skip = False #wj debug
 
-            mask_p = np.random.rand(*batch_2d.shape[:-1])>0.03
-            mask_p0 = batch_2d[...,-1]>1e-8
-            mask_p = np.logical_and(mask_p,mask_p0)
-            mask_pf = mask_p.astype(np.float32)
-            batch_2d[np.logical_not(mask_p)] = np.random.rand()*2-1
-            batch_2d[...,-1] = mask_pf
+            if not skip:
+                #mask_p = np.random.rand(*batch_2d.shape[:-1])>0.03
+                mask_p = get_mask_for_train(*batch_2d.shape[:-1])
+                mask_p0 = batch_2d[...,-1]>1e-8
+                mask_p = np.logical_and(mask_p,mask_p0)
+                mask_pf = mask_p.astype(np.float32)
+                random_batch_2d = np.random.rand(*batch_2d.shape)*2-1
+                #batch_2d[np.logical_not(mask_p)] = np.random.rand()*2-1
+                rmask_p = np.logical_not(mask_p)
+                batch_2d[rmask_p] = random_batch_2d[rmask_p]
+                batch_2d[...,-1] = mask_pf
 
             mask_p_sem = batch_2d_semi[...,-1]>0.015
             mask_p_sem = mask_p_sem.astype(np.float32)
@@ -422,9 +444,7 @@ while epoch < args.epochs:
                 reconstruction_semi[:,:,SemDataset.COCO_ID_VALID,:] = reconstruction_semi[:,:,SemDataset.H36M_ID_VALID,:]
                 coco_mask = torch.from_numpy(SemDataset.COCO_MASK).to(torch_device)
                 target_semi_w = target_semi_w*coco_mask
-                loss_reconstruction,loss_reconstruction_offset = weighted_mpjpe_ignore_trans(reconstruction_semi, target_semi,target_semi_w,
-                    joints_pair_a=SemDataset.PAIRS_A,
-                    joints_pair_b=SemDataset.PAIRS_B) # On 2D poses
+                loss_reconstruction,loss_reconstruction_offset = weighted_mpjpe_ignore_trans(reconstruction_semi, target_semi,target_semi_w) # On 2D poses
                 epoch_loss_2d_train_unlabeled += predicted_semi.shape[0]*predicted_semi.shape[1] * loss_reconstruction.item()
                 loss_reconstruction_np = loss_reconstruction.item()
                 loss_reconstruction_offset_np = loss_reconstruction_offset.item()
@@ -725,5 +745,5 @@ while epoch < args.epochs:
 
 
 '''
-train_semv2.py --subjects-train S1,S11,S9,S5,S6,S7,S8  -e 100 -lrd 0.98 -arc 3,3,3,3 --warmup 3 -b 512 -k detectron_pt_coco --dataset h36m 
+train_sem_remove_offset.py --subjects-train S1,S11,S9,S5,S6,S7,S8  -e 100 -lrd 0.98 -arc 3,3,3,3 --warmup 3 -b 512 -k detectron_pt_coco --dataset h36m 
 '''

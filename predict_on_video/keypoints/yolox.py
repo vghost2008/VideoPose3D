@@ -18,6 +18,7 @@ import torchvision.transforms
 import torch.multiprocessing
 import numpy as np
 import onnxruntime as ort
+import wml_utils as wmlu
 
 
 curdir_path = osp.dirname(__file__)
@@ -138,7 +139,8 @@ class YOLOXDetection:
         input_shape = (640,640)
         img,r = self.preproc(img,input_shape)
         img = np.expand_dims(img,axis=0)
-        output = self.model.run(None, {self.input_name: img})[0]
+        with wmlu.TimeThis():
+            output = self.model.run(None, {self.input_name: img})[0]
         output = self.demo_postprocess(output,input_shape)
         output = torch.tensor(output)
         output = self.postprocess(output,80,0.45,0.45,class_agnostic=False)

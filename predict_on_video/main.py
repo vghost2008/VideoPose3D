@@ -14,7 +14,7 @@ from common.model import TemporalModel
 from common.camera import *
 import matplotlib.pyplot as plt
 import pickle
-os.environ['CUDA_VISIBLE_DEVICES'] = "0"
+os.environ['CUDA_VISIBLE_DEVICES'] = "2"
 matplotlib.use('Agg')
 
 tf.enable_eager_execution()
@@ -194,10 +194,9 @@ class VideoPose3DModel:
         if flip:
             pos_3d[1,:,:,0] = pos_3d[1,:,:,0]*-1
             pos_3d[1,:,self.joints_right+self.joints_left,:] = pos_3d[1,:,self.joints_left+self.joints_right,:]
-
             pos_3d = np.mean(pos_3d,axis=0,keepdims=True)
 
-        if False and self.model_traj is not None:
+        if self.model_traj is not None:
             offset = self.model_traj(data_traj)
             offset = offset.cpu().detach().numpy()
             if flip:
@@ -205,7 +204,20 @@ class VideoPose3DModel:
                 offset = np.mean(offset,axis=0,keepdims=True)
             pos_3d = pos_3d+offset
 
-        return np.squeeze(pos_3d,axis=0)
+        res = np.squeeze(pos_3d,axis=0)
+        xmin,xmax = np.min(res[...,0],axis=1),np.max(res[...,0],axis=1)
+        ymin,ymax = np.min(res[...,1],axis=1),np.max(res[...,1],axis=1)
+        zmin,zmax = np.min(res[...,2],axis=1),np.max(res[...,2],axis=1)
+        bboxes = np.stack([xmax-xmin,ymax-ymin,zmax-zmin],axis=-1)
+        axmin = np.min(xmin)
+        axmax = np.max(xmax)
+        aymin = np.min(ymin)
+        aymax = np.max(ymax)
+        azmin = np.min(zmin)
+        azmax = np.max(zmax)
+        wmlu.show_list(bboxes)
+        print(axmin,axmax,aymin,aymax,azmin,azmax)
+        return res
 
 class RenderAnimation:
     def __init__(self,frames,pos_3d,keypoints) -> None:
@@ -289,6 +301,9 @@ class RenderAnimation:
             ax.set_zticklabels([])
             ax.dist = 7.5
             ax.set_title(f"Data") #, pad=35
+            ax.set_xlabel("X")
+            ax.set_ylabel("Y")
+            ax.set_zlabel("Z")
             ax_3d.append(ax)
             lines_3d.append([])
     
@@ -379,10 +394,12 @@ class RenderAnimation:
 if __name__ == "__main__":
     args = parse_args()
     video_path = args.video
-    #video_path = "/home/wj/ai/mldata/human3.6/S6/Videos/_ALL.54138969.mp4"
+    video_path ='/home/wj/ai/mldata/pose3d/tennis1.mp4'
+    video_path = '/home/wj/ai/mldata/pose3d/basketball2.mp4'
+    #video_path = "/home/wj/ai/mldata/human3.6/S6/Videos/Walking.58860488.mp4"
     use_scores = True
     if use_scores:
-        suffix = "_v3"
+        suffix = "_v4"
     else:
         suffix = "_v1"
     save_dir = "/home/wj/ai/mldata/pose3d/tmp/predict_on_video_"+wmlu.base_name(video_path)+suffix
@@ -391,7 +408,8 @@ if __name__ == "__main__":
     ckpt_pos = 'weights/epoch_80.bin'
     ckpt_traj = 'weights/epoch_80.bin'
     if use_scores:
-        ckpt_pos = 'weights_semv3/epoch_50.bin'
+        ckpt_pos = 'weights_semv3/epoch_80.bin'
+        ckpt_pos = 'weights_semv4/epoch_100.bin'
     else:
         ckpt_pos = 'weights_sem/epoch_30.bin'
         ckpt_pos = 'weights/epoch_80.bin'

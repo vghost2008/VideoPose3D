@@ -29,11 +29,11 @@ def any_nan(v):
 
 def show_minmax(name,v):
     print(f"{name} min:{torch.min(v).item()}, max:{torch.max(v).item()}")
-def weighted_mpjpe_ignore_trans(predicted, target, w,joints_pair_a,joints_pair_b):
+def weighted_mpjpe_ignore_trans(predicted, target, w):
     assert predicted.shape == target.shape
     assert w.shape[0] == predicted.shape[0]
 
-    dis1 = predicted[:,:,joints_pair_a]-predicted[:,:,joints_pair_b]
+    '''dis1 = predicted[:,:,joints_pair_a]-predicted[:,:,joints_pair_b]
     dis2_mask = w[:,:,joints_pair_a]*w[:,:,joints_pair_b]
     dis2 = target[:,:,joints_pair_a]-target[:,:,joints_pair_b]
     dis2 = torch.norm(dis2,2,dim=-1,keepdim=True)*dis2_mask
@@ -41,13 +41,25 @@ def weighted_mpjpe_ignore_trans(predicted, target, w,joints_pair_a,joints_pair_b
     dis1 = torch.sum(dis1,axis=2,keepdims=True)
     dis2 = torch.sum(dis2,axis=2,keepdims=True)
     r = dis2/(dis1+1e-5)
-    predicted = predicted*r.detach()
+    if any_nan(r):
+        print(f"R has nan, dis1 {any_nan(dis1)} {any_nan(dis2)}")
+    r = torch.clamp(r,0.9,1.1)
+    predicted = predicted*r.detach()'''
 
-    inv_w = torch.sum(w,2,keepdim=True)+1e-5
+    inv_w = torch.sum(w,2,keepdim=True)+1e-1
     inv_w = 1.0/inv_w
+    if any_nan(inv_w):
+        print("inv_w has nan")
     offset = torch.sum((predicted-target)*w,2,keepdim=True)*inv_w
+    offset_error = torch.mean(torch.abs(offset))
     error = predicted-target-offset.detach()
-    return torch.mean(w * torch.norm(error, dim=len(target.shape)-1))
+    res = torch.mean(w * torch.norm(error, dim=len(target.shape)-1))
+
+    if any_nan(res):
+        print(f"Use zero loss.")
+        return torch.zeros_like(res),torch.zeros_like(offset_error)
+    else:
+        return res,offset_error
 
 def p_mpjpe(predicted, target):
     """

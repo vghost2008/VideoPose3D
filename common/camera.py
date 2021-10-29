@@ -17,6 +17,10 @@ def normalize_screen_coordinates(X, w, h):
     # Normalize so that [0, w] is mapped to [-1, 1], while preserving the aspect ratio
     return X/w*2 - [1, h/w]
 
+def unnormalize_screen_coordinates(X, w, h): 
+    assert X.shape[-1] == 2
+    # Normalize so that [0, w] is mapped to [-1, 1], while preserving the aspect ratio
+    return (X + [1, h/w])*w/2
     
 def image_coordinates(X, w, h):
     assert X.shape[-1] == 2
@@ -82,7 +86,6 @@ def npproject_to_2d(X, camera_params):
     
     while len(camera_params.shape) < len(X.shape):
         camera_params = np.expand_dims(camera_params,1)
-        
     f = camera_params[..., :2]
     c = camera_params[..., 2:4]
     k = camera_params[..., 4:7]
