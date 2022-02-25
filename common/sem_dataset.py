@@ -97,7 +97,7 @@ class SemDataset(MocapDataset):
     H36M_ID_UNVALID = unused_id0
     COCO_ID_UNVALID = unused_id1
     COCO_MASK = coco_mask
-    def __init__(self, detections_path='/home/wj/ai/mldata/totalcapture', remove_static_joints=True):
+    def __init__(self, detections_path='/home/wj/ai/mldata1/totalcapture', remove_static_joints=True):
         super().__init__(fps=None, skeleton=h36m_skeleton)        
         self.poses_2d = None
         self.cameras_data = None

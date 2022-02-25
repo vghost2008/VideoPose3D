@@ -527,7 +527,7 @@ while epoch < args.epochs:
         epoch_loss_2d_valid = 0
         N = 0
         
-        if not args.no_eval and epoch%eval_step==0:
+        if not args.no_eval and epoch%eval_step==0 and False:
             eval_done = True
             # Evaluate on test set
             for cam, batch, batch_2d in test_generator.next_epoch():

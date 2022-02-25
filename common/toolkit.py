@@ -33,3 +33,13 @@ def get_mask_for_train(batch_size,seq_len,kps_nr):
     mask_p1 = np.random.rand(batch_size,seq_len,kps_nr)>probs_l1 
     mask_p = np.logical_or(mask_p0,mask_p1)
     return mask_p
+
+def get_mask_for_random_value(batch_size,seq_len,kps_nr):
+    probs_l0 = 0.03
+    probs_l1 = 0.09
+    mask_p0 = np.random.rand(batch_size,seq_len)>probs_l0
+    mask_p0 = np.expand_dims(mask_p0,axis=-1)
+    mask_p0 = np.tile(mask_p0,[1,1,kps_nr])
+    mask_p1 = np.random.rand(batch_size,seq_len,kps_nr)>probs_l1 
+    mask_p = np.logical_or(mask_p0,mask_p1)
+    return mask_p

@@ -1,6 +1,6 @@
 import argparse
 import tensorflow as tf
-from track_keypoints import *
+from track_keypointsv2 import *
 from demo_toolkit import *
 import tensorflow as tf
 import numpy as np
@@ -14,7 +14,8 @@ from common.model import TemporalModel
 from common.camera import *
 import matplotlib.pyplot as plt
 import pickle
-os.environ['CUDA_VISIBLE_DEVICES'] = "2"
+from data import tmp_kp_data1
+os.environ['CUDA_VISIBLE_DEVICES'] = "3"
 matplotlib.use('Agg')
 
 tf.enable_eager_execution()
@@ -144,6 +145,7 @@ class VideoPose3DModel:
         '''
         kps: [N,17,2+x]
         '''
+        kps = tmp_kp_data1
         kps = np.array(kps)
         if self.use_scores:
             scores = (np.array(kps)[...,2:]>0.015).astype(np.float32)
@@ -196,7 +198,7 @@ class VideoPose3DModel:
             pos_3d[1,:,self.joints_right+self.joints_left,:] = pos_3d[1,:,self.joints_left+self.joints_right,:]
             pos_3d = np.mean(pos_3d,axis=0,keepdims=True)
 
-        if self.model_traj is not None:
+        if False and self.model_traj is not None:
             offset = self.model_traj(data_traj)
             offset = offset.cpu().detach().numpy()
             if flip:
@@ -366,7 +368,7 @@ class RenderAnimation:
 
         writer = None
 
-        for i in range(len(keypoints)):
+        for i in range(len(pos_3d)):
             update_video(i)
             fig.canvas.draw()
             image_from_plot = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
@@ -395,7 +397,9 @@ if __name__ == "__main__":
     args = parse_args()
     video_path = args.video
     video_path ='/home/wj/ai/mldata/pose3d/tennis1.mp4'
-    video_path = '/home/wj/ai/mldata/pose3d/basketball2.mp4'
+    #video_path = '/home/wj/ai/mldata/pose3d/basketball1.mp4'
+    #video_path = '/home/wj/ai/mldata/pose3d/basketball2.mp4'
+    #video_path = '/home/wj/ai/mldata/pose3d/basketball3.mp4'
     #video_path = "/home/wj/ai/mldata/human3.6/S6/Videos/Walking.58860488.mp4"
     use_scores = True
     if use_scores:
@@ -408,7 +412,7 @@ if __name__ == "__main__":
     ckpt_pos = 'weights/epoch_80.bin'
     ckpt_traj = 'weights/epoch_80.bin'
     if use_scores:
-        ckpt_pos = 'weights_semv3/epoch_80.bin'
+        #ckpt_pos = 'weights_semv3/epoch_80.bin'
         ckpt_pos = 'weights_semv4/epoch_100.bin'
     else:
         ckpt_pos = 'weights_sem/epoch_30.bin'

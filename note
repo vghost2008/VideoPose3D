@@ -1,0 +1,21 @@
+def corner_rectify(img, corner_lst, lp_size):
+    """
+    对检测的车牌进行角点校正
+    :param img: 检测的车牌
+    :param corner_lst: 车牌的角点
+    :param lp_size: 车牌校正后的大小
+    :return:
+    """
+    src = np.asarray(corner_lst, dtype=np.float32)
+    lp_w, lp_h = lp_size  # lp_w = 96, lp_h = 32
+
+    dst_corner_list = [[0, 0],  # LT
+                       [lp_w, 0],  # RT
+                       [lp_w, lp_h],  # RB
+                       [0, lp_h]]  # LB
+
+    dst = np.asarray(dst_corner_list, dtype=np.float32)
+
+    M = cv2.getPerspectiveTransform(src, dst)
+    lp_img = cv2.warpPerspective(img, M, (lp_w, lp_h))
+    return lp_img

@@ -11,7 +11,9 @@ from common.camera import *
 from common.sem_dataset import *
 from common.toolkit import get_offset
 
-global_cam = {
+#S6
+global_cam = [
+    {
    'id': '54138969',
         'center': [512.54150390625, 515.4514770507812],
         'focal_length': [1145.0494384765625, 1143.7811279296875],
@@ -22,7 +24,20 @@ global_cam = {
         'azimuth': 70, # Only used for visualization
         'orientation': [0.1337897777557373, -0.15692396461963654, -0.7571090459823608, 0.6198879480361938],
         'translation': [1935.4517822265625, 4950.24560546875, 1618.0838623046875],
-}
+},
+   {
+        'id': '55011271',
+        'center': [508.8486328125, 508.0649108886719],
+        'focal_length': [1149.6756591796875, 1147.5916748046875],
+        'radial_distortion': [-0.1942136287689209, 0.2404085397720337, 0.006819975562393665],
+        'tangential_distortion': [-0.0016190266469493508, -0.0027408944442868233],
+        'res_w': 1000,
+        'res_h': 1000,
+        'azimuth': -70, # Only used for visualization
+        'orientation': [0.6147197484970093, -0.7628812789916992, -0.16174767911434174, 0.11819244921207428],
+        'translation': [1969.803955078125, -5128.73876953125, 1632.77880859375],
+    },
+]
 
 
 def load_data(kp2d_path='data/data_2d_h36m_detectron_pt_coco.npz',kp3d_path='data/data_3d_h36m.npz'):
@@ -52,27 +67,30 @@ def update_cam(cam):
     return cam
 
 if __name__ == "__main__":
-    subject = 'S6'
-    action = 'Walking'
-    #subject = 'S1'
-    #action = 'Directions 1'
     save_dir = "/home/wj/ai/mldata/pose3d/tmp/vis_human3.6"
-    video_path = "/home/wj/ai/mldata/human3.6/S6/Videos/Walking.58860488.mp4"
-    video_path = "/home/wj/ai/mldata/human3.6/S6/Videos/Walking.54138969.mp4"
+
+    subject = 'S6'
+    action = 'WalkTogether 1'
+
+    video_path = "/home/wj/ai/mldata/human3.6/S6/Videos/WalkTogether 1.55011271.mp4"
+    cam_idx = 1
+
+    video_path = "/home/wj/ai/mldata/human3.6/S6/Videos/WalkTogether 1.54138969.mp4"
+    cam_idx = 0
+
     keep_ids = [0, 1, 2, 3, 6, 7, 8, 12, 13, 14, 15, 17, 18, 19,25,26,27]
     wmlu.create_empty_dir(save_dir,remove_if_exists=False)
     save_path = osp.join(save_dir,osp.basename(video_path))
     kps2d,kps3d = load_data()
     kps2d = kps2d[subject][action]
     kps3d = kps3d[subject][action]
-    cam = update_cam(global_cam)
+    cam = update_cam(global_cam[cam_idx])
     #use first camera
     kps3d = world_to_camera(kps3d,R=cam['orientation'], t=cam['translation'])
     kps3d = kps3d[:,keep_ids,:]
-    kps2d = kps2d[0][...,:2]
+    kps2d = kps2d[cam_idx][...,:2]
     #kps2d = kps2d[:,keep_ids,:]
     kps2d[:,SemDataset.COCO_ID_VALID,:] = kps2d[:,SemDataset.H36M_ID_VALID,:]
-
 
     video_writer = wmli.VideoWriter(save_path,fmt='BGR')
     reader = cv2.VideoCapture(video_path)
@@ -104,7 +122,7 @@ if __name__ == "__main__":
         kp3d = kps3d[idx]
         proj_2d = proj_2ds[idx]
         frame = show_keypoints(frame,kp2d)
-        frame = show_keypoints(frame,proj_2d,color=(255,0,0))
+        frame = show_keypoints(frame,proj_2d,color=(0,0,255)) #red
         video_writer.write(frame)
         idx += 1
         if max_frames is not None and idx>max_frames:

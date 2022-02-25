@@ -1,7 +1,7 @@
 import numpy as np
 import os
-from common.toolkit import get_offset,get_mask_for_train
-os.environ['CUDA_VISIBLE_DEVICES'] = "3"
+from common.toolkit import get_mask_for_random_value, get_offset,get_mask_for_train
+os.environ['CUDA_VISIBLE_DEVICES'] = "1"
 from common.arguments import parse_args
 import torch
 import wml_utils as wmlu
@@ -17,9 +17,17 @@ from common.generators import ChunkedGenerator, UnchunkedGenerator
 from time import time
 from common.utils import deterministic_random
 import cv2
-
+config1 = {
+    'suffix':"_semv4",
+    'random_value':False,
+}
+config2 = {
+    'suffix':"_semv5",
+    'random_value':True,
+}
+train_config = config2
 args = parse_args()
-args.checkpoint = args.checkpoint+"_semv4"
+args.checkpoint = args.checkpoint+train_config['suffix']
 in_features = 3
 print(args)
 
@@ -374,6 +382,12 @@ while epoch < args.epochs:
                 rmask_p = np.logical_not(mask_p)
                 batch_2d[rmask_p] = random_batch_2d[rmask_p]
                 batch_2d[...,-1] = mask_pf
+                if train_config['random_value']:
+                    mask_p = get_mask_for_random_value(*batch_2d.shape[:-1])
+                    random_batch_2d = np.random.rand(*batch_2d.shape)*2-1
+                    rmask_p = np.logical_not(mask_p)
+                    batch_2d[rmask_p] = random_batch_2d[rmask_p]
+                    batch_2d[...,-1] = (batch_2d[...,-1]+1)/2.0
 
             mask_p_sem = batch_2d_semi[...,-1]>0.015
             mask_p_sem = mask_p_sem.astype(np.float32)
